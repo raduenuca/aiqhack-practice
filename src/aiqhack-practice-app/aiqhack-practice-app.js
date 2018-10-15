@@ -30,10 +30,9 @@ class AiqhackPracticeApp extends PolymerElement {
                 img {
                     max-width: 100%;
                     display: block;
-                    margin: 0 auto;
                 } 
             </style>
-            <h2>Handwritten character recognition</h2>
+            <h2>Handwritten character recognition: [[predicted]]</h2>
             <div>
                 <paper-button on-tap="_clear">Clear</paper-button>
                 <paper-button on-tap="_predict">Predict</paper-button>
@@ -42,7 +41,8 @@ class AiqhackPracticeApp extends PolymerElement {
                 <canvas id="blackboard" width="280" height="280" />
             </div>
             <div>
-                <img src$="[[data]]" id="canvas_image" class="canvas-image"/>
+                <span>Cropped:</span>
+                <img src$="[[_croppedDrawing]]" id="canvas_image" class="canvas-image"/>
             </div>
     `;
     }
@@ -153,9 +153,7 @@ class AiqhackPracticeApp extends PolymerElement {
 
         const predictions = await model.predict(tensor);
         let result = predictions.as1D().argMax();
-        const digit = (await result.data())[0];
-
-        alert(digit);
+        this.predicted = (await result.data())[0];
     }
 
     _clear(){
@@ -184,7 +182,7 @@ class AiqhackPracticeApp extends PolymerElement {
 
         tCtx.drawImage(this.$.blackboard, minX, minY, maxX - minX, maxY - minY, 0, 0, maxX - minX, maxY - minY);
 
-        this.data = tempCanvas.toDataURL();
+        this._croppedDrawing = tempCanvas.toDataURL();
 
         return tempCanvas;
     }
