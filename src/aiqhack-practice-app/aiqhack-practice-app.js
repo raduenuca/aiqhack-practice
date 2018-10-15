@@ -15,13 +15,35 @@ class AiqhackPracticeApp extends PolymerElement {
                 :host {
                   display: block;
                 }
+                canvas{
+                    background-color: #000;
+                }
+                
+                .canvas-image {
+                    height: 35px;
+                    width: 35px;
+                    background-color: rgba(0,0,0,1);
+                    border-radius: 5px;
+                    padding: 5px;
+                }
+
+                img {
+                    max-width: 100%;
+                    display: block;
+                    margin: 0 auto;
+                } 
             </style>
             <h2>Handwritten character recognition</h2>
             <div>
                 <paper-button on-tap="_clear">Clear</paper-button>
                 <paper-button on-tap="_predict">Predict</paper-button>
             </div>
-            <canvas id="blackboard" width="280" height="280" />
+            <div>
+                <canvas id="blackboard" width="280" height="280" />
+            </div>
+            <div>
+                <img src$="[[data]]" id="canvas_image" class="canvas-image"/>
+            </div>
     `;
     }
 
@@ -31,42 +53,34 @@ class AiqhackPracticeApp extends PolymerElement {
                 type: Object,
                 computed: '_getContext()'
             },
-            penColor: {
+            canvasStrokeStyle: {
                 type: String,
                 value: 'white'
             },
-            penLine: {
+            canvasLineJoin: {
                 type: String,
                 value: 'round'
             },
-            penSize: {
+            canvasLineWidth: {
                 type: Number,
                 value: 12
             },
-            _flag: {
+            _clickX : {
+                type: Array,
+                value: () => []
+            },
+            _clickY  : {
+                type: Array,
+                value: () => []
+            },
+            _clickD   : {
+                type: Array,
+                value: () => []
+            },
+            _drawing: {
                 type: Boolean,
                 value: false
-            },
-            _dot_flag: {
-                type: Boolean,
-                value: false
-            },
-            _prevX: {
-                type: Number,
-                value: 0
-            },
-            _currX: {
-                type: Number,
-                value: 0
-            },
-            _prevY: {
-                type: Number,
-                value: 0
-            },
-            _currY: {
-                type: Number,
-                value: 0
-            },
+            }
         };
     }
 
@@ -74,26 +88,62 @@ class AiqhackPracticeApp extends PolymerElement {
         super.ready();
 
         this.$.blackboard.addEventListener('mousemove', (e) => {
-            this._findxy('move', e)
+            if(this._drawing) {
+                const mouseX = e.clientX - this.$.blackboard.offsetLeft;
+                const mouseY = e.clientY - this.$.blackboard.offsetTop;
+                this._addUserGesture(mouseX, mouseY, true);
+                this._drawOnCanvas();
+            }
         }, false);
         this.$.blackboard.addEventListener('mousedown', (e) => {
-            this._findxy('down', e)
+            const mouseX = e.clientX - this.$.blackboard.offsetLeft;
+            const mouseY = e.clientY - this.$.blackboard.offsetTop;
+
+            this._drawing = true;
+            this._addUserGesture(mouseX, mouseY);
+            this._drawOnCanvas();
         }, false);
-        this.$.blackboard.addEventListener('mouseup', (e) => {
-            this._findxy('up', e)
+        this.$.blackboard.addEventListener('mouseup', () => {
+            this._drawing = false;
         }, false);
-        this.$.blackboard.addEventListener('mouseout', (e) => {
-            this._findxy('out', e)
+        this.$.blackboard.addEventListener('mouseleave', () => {
+            this._drawing = false;
         }, false);
+    }
+
+    _addUserGesture(x, y, dragging) {
+        this._clickX.push(x);
+        this._clickY.push(y);
+        this._clickD.push(dragging);
+    }
+
+    _drawOnCanvas() {
+        this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+
+        this.ctx.strokeStyle = this.canvasStrokeStyle;
+        this.ctx.lineJoin    = this.canvasLineJoin;
+        this.ctx.lineWidth   = this.canvasLineWidth;
+
+        for (let i = 0; i < this._clickX.length; i++) {
+            this.ctx.beginPath();
+            if(this._clickD[i] && i) {
+                this.ctx.moveTo(this._clickX[i-1], this._clickY[i-1]);
+            } else {
+                this.ctx.moveTo(this._clickX[i]-1, this._clickY[i]);
+            }
+            this.ctx.lineTo(this._clickX[i], this._clickY[i]);
+            this.ctx.closePath();
+            this.ctx.stroke();
+        }
     }
 
     async _predict(){
         const model = await tf.loadModel('/model/model.json');
 
         //get image data
-        const digitData = this.ctx.getImageData(0, 0, 280, 280);
+        const digitData = this._boundingBox();
 
-        let tensor = tf.fromPixels(this.$.blackboard)
+        let tensor = tf.fromPixels(digitData)
             .resizeNearestNeighbor([28, 28])
             .mean(2)
             .expandDims(2)
@@ -101,72 +151,43 @@ class AiqhackPracticeApp extends PolymerElement {
             .toFloat()
             .div(255.0);
 
-        const prediction = await model.predict(tensor).data();
+        const predictions = await model.predict(tensor);
+        let result = predictions.as1D().argMax();
+        const digit = (await result.data())[0];
 
-        let results = Array.from(prediction);
-
-        console.log(results);
+        alert(digit);
     }
 
     _clear(){
-        const canvas = this.$.blackboard;
-        this.ctx.clearRect(0, 0, canvas.width, canvas.height);
-        this.ctx.fillStyle = 'black';
-        this.ctx.fillRect(0, 0, canvas.width, canvas.height);
+        this.ctx.clearRect(0, 0, this.$.blackboard.width, this.$.blackboard.height);
+        this._clickX = new Array();
+        this._clickY = new Array();
+        this._clickD = new Array();
     }
 
     _getContext() {
-        const canvas = this.$.blackboard;
-        const ctx = canvas.getContext('2d');
-
-        ctx.fillStyle = 'black';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        return ctx;
+        return this.$.blackboard.getContext('2d');
     }
 
-    _findxy(res, e) {
-        const canvas = this.$.blackboard;
-        if (res === 'down') {
-            this._prevX = this._currX;
-            this._prevY = this._currY;
-            this._currX = e.clientX - canvas.offsetLeft;
-            this._currY = e.clientY - canvas.offsetTop;
+    _boundingBox() {
+        const minX = Math.min.apply(Math, this._clickX) - 20;
+        const maxX = Math.max.apply(Math, this._clickX) + 20;
 
-            this._flag = true;
-            this._dot_flag = true;
-            if (this._dot_flag) {
-                this.ctx.beginPath();
-                this.ctx.fillStyle = this.penColor;
-                this.ctx.fillRect(this._currX, this._currY, 2, 2);
-                this.ctx.closePath();
-                this._dot_flag = false;
-            }
-        }
-        if (res === 'up' || res === "out") {
-            this._flag = false;
-        }
-        if (res === 'move') {
-            if (this._flag) {
-                this._prevX = this._currX;
-                this._prevY = this._currY;
-                this._currX = e.clientX - canvas.offsetLeft;
-                this._currY = e.clientY - canvas.offsetTop;
-                this._draw();
-            }
-        }
+        const minY = Math.min.apply(Math, this._clickY) - 20;
+        const maxY = Math.max.apply(Math, this._clickY) + 20;
+
+        const tempCanvas = document.createElement("canvas"),
+            tCtx = tempCanvas.getContext("2d");
+
+        tempCanvas.width  = maxX - minX;
+        tempCanvas.height = maxY - minY;
+
+        tCtx.drawImage(this.$.blackboard, minX, minY, maxX - minX, maxY - minY, 0, 0, maxX - minX, maxY - minY);
+
+        this.data = tempCanvas.toDataURL();
+
+        return tempCanvas;
     }
-
-    _draw() {
-        this.ctx.beginPath();
-        this.ctx.moveTo(this._prevX, this._prevY);
-        this.ctx.lineTo(this._currX, this._currY);
-        this.ctx.strokeStyle = this.penColor;
-        this.ctx.lineJoin  = this.penLine;
-        this.ctx.lineWidth = this.penSize;
-        this.ctx.stroke();
-        this.ctx.closePath();
-    };
 }
 
 window.customElements.define('aiqhack-practice-app', AiqhackPracticeApp);
