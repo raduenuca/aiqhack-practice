@@ -1,0 +1,7 @@
+{
+  "name": "aiqhack-practice",
+  "short_name": "aiqhack-practice",
+  "description": "AIQ Hack Practive meetup code",
+  "start_url": "/",
+  "display": "standalone"
+}
